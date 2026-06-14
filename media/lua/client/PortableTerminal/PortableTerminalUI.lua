@@ -14,6 +14,8 @@ require "ISUI/ISInventoryPane"
 require "TimedActions/ISInventoryTransferAction"
 require "WarehouseTerminal/WarehouseTerminalVariant"
 require "WarehouseTerminal/WarehouseTerminalUI"
+require "PortableTerminal/PortableTerminalPowerMonitor"
+require "PortableTerminal/PortableTerminalTemperatureMonitor"
 
 PortableTerminal = PortableTerminal or {}
 PortableTerminal.USE_RADIUS = 3
@@ -23,6 +25,44 @@ PortableTerminal.SCAN_BACKOFF_MULTIPLIER = 2
 PortableTerminal.FAST_REFRESH_INTERVAL_MS = 800
 PortableTerminal.FAST_REFRESH_MIN_COUNT = 3
 PortableTerminal.FAST_REFRESH_MAX_COUNT = 15
+
+-- Battery system (drains per item transferred via the terminal)
+-- Defaults can be overridden via Sandbox options.
+PortableTerminal.BATTERY_MAX = 100
+PortableTerminal.BATTERY_DRAIN_PER_ITEM = 2.0
+PortableTerminal.BATTERY_KEY = "DeviceBattery"
+
+-- Read sandbox overrides (applied once on first load)
+if not PortableTerminal._sandboxInitialized then
+    PortableTerminal._sandboxInitialized = true
+    if SandboxVars and SandboxVars.PortableTerminal then
+        local sbMax = tonumber(SandboxVars.PortableTerminal.BatteryMax)
+        if sbMax and sbMax > 0 then
+            PortableTerminal.BATTERY_MAX = math.floor(sbMax)
+        end
+        local sbDrain = tonumber(SandboxVars.PortableTerminal.BatteryDrainPerItem)
+        if sbDrain and sbDrain > 0 then
+            PortableTerminal.BATTERY_DRAIN_PER_ITEM = sbDrain
+        end
+    end
+end
+
+function PortableTerminal.getDeviceBattery(item)
+    if not item then return PortableTerminal.BATTERY_MAX end
+    local val = tonumber(item:getModData()[PortableTerminal.BATTERY_KEY])
+    if val == nil then return PortableTerminal.BATTERY_MAX end
+    return math.max(0, math.min(PortableTerminal.BATTERY_MAX, val))
+end
+
+function PortableTerminal.setDeviceBattery(item, value)
+    if not item then return end
+    value = math.max(0, math.min(PortableTerminal.BATTERY_MAX, math.floor(value or PortableTerminal.BATTERY_MAX)))
+    if value >= PortableTerminal.BATTERY_MAX then
+        item:getModData()[PortableTerminal.BATTERY_KEY] = nil
+    else
+        item:getModData()[PortableTerminal.BATTERY_KEY] = value
+    end
+end
 
 PortableTerminalWindow = ISCollapsableWindow:derive("PortableTerminalWindow")
 PortableTerminalItemList = ISScrollingListBox:derive("PortableTerminalItemList")
@@ -248,6 +288,14 @@ function PortableTerminal.openFromItem(player, item)
     if not playerObj then return end
     if not PortableTerminal.isDeviceItem(item) then return end
 
+    -- Battery check: prevent opening if battery is dead
+    if PortableTerminal.getDeviceBattery(item) <= 0 then
+        if playerObj and playerObj.Say then
+            playerObj:Say("Portable Terminal battery is dead - recharge at a generator")
+        end
+        return
+    end
+
     -- PIN check: if device has a PIN set, show PIN dialog first
     if PortableTerminal.hasDevicePIN(item) then
         PortableTerminal.showPINPrompt(player, item)
@@ -344,6 +392,7 @@ function PortableTerminalWindow:new(x, y, width, height, playerObj, item)
     o.minimumHeight    = 420
     o.backgroundColor  = PortableTerminal.Colors.window
     o.borderColor      = PortableTerminal.Colors.border
+    -- lastBatteryDrain starts nil; autoRefresh initializes it on first tick.
 
     return o
 end
@@ -357,6 +406,7 @@ function PortableTerminalWindow:createChildren()
     local th = self:titleBarHeight()
     local pad = 12
     local rightWidth = 230
+    self.rightPanelWidth = rightWidth
     local buttonHeight = 25
     local listWidth = self.width - rightWidth - pad * 3
 
@@ -689,7 +739,28 @@ function PortableTerminalWindow:prerender()
 
     -- Right panel info (added top margin below buttons)
     local connected = self.connectedIP ~= nil and self.packer ~= nil
+    local rpw = self.rightPanelWidth or 230
     local infoY = th + 58
+
+    -- ── Battery bar ──
+    if self.deviceItem then
+        local battery = PortableTerminal.getDeviceBattery(self.deviceItem)
+        local barW = rpw
+        local barH = 8
+        local barX = rightX
+        local barY = infoY
+        self:drawRect(barX, barY, barW, barH, 0.45, 0.06, 0.06, 0.06)
+        local fillW = math.floor(barW * battery / PortableTerminal.BATTERY_MAX)
+        local battColor = colors.accent
+        if battery <= 15 then battColor = colors.danger
+        elseif battery <= 35 then battColor = colors.amber
+        elseif battery <= 60 then battColor = colors.cold
+        end
+        self:drawRect(barX, barY, fillW, barH, 1, battColor.r, battColor.g, battColor.b)
+        local battText = "Battery: " .. math.floor(battery) .. "%"
+        self:drawText(battText, barX + 4, barY - 14, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+        infoY = infoY + 22
+    end
 
     if connected then
         local containers = self.containers and #self.containers or 0
@@ -723,6 +794,84 @@ function PortableTerminalWindow:prerender()
         self:drawText("x" .. tostring(self.selectedEntry.count), rightX, infoY, colors.cold.r, colors.cold.g, colors.cold.b, 1, UIFont.Small)
     else
         self:drawText("No item selected", rightX, infoY, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+    end
+    infoY = infoY + 2
+
+    -- ── Power section: generator fuel + condition ──
+    local generators = PortableTerminalPower and PortableTerminalPower.generators or {}
+    infoY = infoY + 4
+    self:drawRect(rightX, infoY, rpw, 1, 0.35, colors.border.r, colors.border.g, colors.border.b)
+    infoY = infoY + 4
+    self:drawText("⚡ Power", rightX, infoY, colors.amber.r, colors.amber.g, colors.amber.b, 1, UIFont.Small)
+    infoY = infoY + 14
+
+    if #generators > 0 then
+        for _, gen in ipairs(generators) do
+            local fuelVal = tonumber(gen.fuel) or 0
+            local condVal = tonumber(gen.condition) or 0
+            local fuelPct = math.floor(fuelVal)
+            local condPct = math.floor(condVal)
+            local running = gen.running == true
+
+            -- Compact status line with fuel bar
+            local barW = 44
+            local barH = 7
+            local barX = rightX
+            local barY = infoY + 5
+            self:drawRect(barX, barY, barW, barH, 0.5, 0.06, 0.06, 0.06)
+            local fillW = math.max(0, math.min(barW, math.floor(barW * fuelVal / 100)))
+            local barColor = running and colors.accent or colors.textDim
+            if not running then barColor = colors.danger
+            elseif fuelVal <= 20 then barColor = colors.danger
+            elseif fuelVal <= 50 then barColor = colors.amber
+            end
+            self:drawRect(barX, barY, fillW, barH, 1, barColor.r, barColor.g, barColor.b)
+
+            local statusStr = running and "ON" or "OFF"
+            local statusColor = running and colors.accent or colors.danger
+            local line = "Fuel:" .. fuelPct .. "%  Cond:" .. condPct .. "%"
+            self:drawText(line, rightX + barW + 8, infoY, colors.text.r, colors.text.g, colors.text.b, 1, UIFont.Small)
+
+            -- Status on same line, right-aligned
+            local statusW = getTextManager():MeasureStringX(UIFont.Small, statusStr)
+            self:drawText(statusStr, rightX + rpw - statusW - 4, infoY, statusColor.r, statusColor.g, statusColor.b, 1, UIFont.Small)
+            infoY = infoY + 16
+        end
+    else
+        self:drawText("No generators detected", rightX, infoY, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+        infoY = infoY + 14
+    end
+
+    -- ── Temperature warnings ──
+    local tempWarnings = PortableTerminalTemperature and PortableTerminalTemperature.warnings or {}
+    infoY = infoY + 2
+    self:drawRect(rightX, infoY, rpw, 1, 0.35, colors.border.r, colors.border.g, colors.border.b)
+    infoY = infoY + 4
+    self:drawText("🌡 Temperature", rightX, infoY, colors.cold.r, colors.cold.g, colors.cold.b, 1, UIFont.Small)
+    infoY = infoY + 14
+
+    if #tempWarnings > 0 then
+        local maxWarns = 4
+        for i, warn in ipairs(tempWarnings) do
+            if i > maxWarns then
+                self:drawText("+" .. (#tempWarnings - maxWarns) .. " more...", rightX, infoY, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+                break
+            end
+            local wc = warn.severity == "danger" and colors.danger or colors.amber
+            local icon = warn.severity == "danger" and "!! " or "!  "
+            local msg = icon .. (warn.label or "?")
+            local maxW = rpw - 10
+            drawClippedText(self, msg, rightX, infoY, maxW, wc.r, wc.g, wc.b, 1, UIFont.Small)
+            infoY = infoY + 12
+        end
+    else
+        local containerCount = PortableTerminalTemperature and PortableTerminalTemperature.containers and #PortableTerminalTemperature.containers or 0
+        if containerCount > 0 then
+            self:drawText("All cold containers OK", rightX, infoY, colors.accent.r, colors.accent.g, colors.accent.b, 1, UIFont.Small)
+        else
+            self:drawText("No cold containers found", rightX, infoY, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+        end
+        infoY = infoY + 14
     end
 end
 
@@ -842,6 +991,40 @@ function PortableTerminalWindow:getSelectedEntries()
 end
 
 -- ============================================================================
+-- Battery drain helper — drains per item transferred via the terminal.
+-- Returns true if the terminal still has power after the drain.
+-- ============================================================================
+function PortableTerminalWindow:drainBatteryForAction(itemCount)
+    if not self.deviceItem then return true end
+    if not itemCount or itemCount <= 0 then return true end
+
+    local battery = PortableTerminal.getDeviceBattery(self.deviceItem)
+    if battery <= 0 then
+        self:closeDueToDeadBattery()
+        return false
+    end
+
+    local drain = itemCount * PortableTerminal.BATTERY_DRAIN_PER_ITEM
+    local newBattery = math.max(0, battery - drain)
+    PortableTerminal.setDeviceBattery(self.deviceItem, newBattery)
+
+    if newBattery <= 0 then
+        self:closeDueToDeadBattery()
+        return false
+    end
+    return true
+end
+
+function PortableTerminalWindow:closeDueToDeadBattery()
+    if self.playerObj and self.playerObj.Say then
+        self.playerObj:Say("Portable Terminal battery is dead - recharge at a generator")
+    end
+    self:setVisible(false)
+    self:removeFromUIManager()
+    PortableTerminalWindow.instance = nil
+end
+
+-- ============================================================================
 -- Transfer Logic
 -- ============================================================================
 function PortableTerminalWindow:collectItemsForEntry(entry, mode)
@@ -885,6 +1068,7 @@ function PortableTerminalWindow:takeItems(mode)
     for _, item in ipairs(fitItems) do
         ISTimedActionQueue.add(ISInventoryTransferAction:new(self.playerObj, item, item:getContainer(), playerInv))
     end
+    self:drainBatteryForAction(#fitItems)
     self.fastRefreshCount = PortableTerminal.getFastRefreshCount(#fitItems)
     self.fastRefreshLastScan = getTimestampMs and getTimestampMs() or 0
 end
@@ -902,6 +1086,7 @@ function PortableTerminalWindow:storeItemsToNetwork(itemsToStore)
             containers = self.containers, allowEquipped = true,
             fallbackContainer = nil, forcedColdType = forcedColdType,
             onComplete = function(queued)
+                self:drainBatteryForAction(queued or itemCount)
                 self.fastRefreshCount = PortableTerminal.getFastRefreshCount(queued or itemCount)
                 self.fastRefreshLastScan = getTimestampMs and getTimestampMs() or 0
             end
@@ -924,6 +1109,7 @@ function PortableTerminalWindow:storeItemsToNetwork(itemsToStore)
             end
         end
     end
+    self:drainBatteryForAction(itemCount)
     self.fastRefreshCount = PortableTerminal.getFastRefreshCount(itemCount)
     self.fastRefreshLastScan = getTimestampMs and getTimestampMs() or 0
 end
@@ -958,14 +1144,23 @@ function PortableTerminalWindow:storeAllToNetwork()
 end
 
 -- ============================================================================
--- Auto-refresh timer (multi-refresh after transfers, then exponential backoff)
+-- Auto-refresh timer (multi-refresh after transfers, then exponential backoff).
+-- Battery no longer drains over time — it drains per item transferred instead.
 -- ============================================================================
 local function autoRefresh()
     local window = PortableTerminalWindow.instance
     if not window or not window:isVisible() then return end
+
+    -- If battery somehow hit 0 (shouldn't happen from time, but drains from actions), close UI
+    if window.deviceItem and PortableTerminal.getDeviceBattery(window.deviceItem) <= 0 then
+        window:closeDueToDeadBattery()
+        return
+    end
+
+    local now = getTimestampMs and getTimestampMs() or 0
+
     if not window.connectedIP then return end
     if window.scanStopped then return end
-    local now = getTimestampMs and getTimestampMs() or 0
 
     -- Fast refresh: lightweight re-scan (no Packer hunt) after transfers
     if (window.fastRefreshCount or 0) > 0 then

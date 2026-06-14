@@ -1,8 +1,9 @@
 -- PortableTerminalFreezerClient.lua
--- SINGLE-PLAYER: Prevents rot + thaw for items in freezers connected to a
+-- SINGLE-PLAYER ONLY: Prevents rot + thaw for items in freezers connected to a
 -- Warehouse Terminal network, as long as the freezer has power.
 -- Items follow normal freezing progression first (not instantly frozen).
 -- Controlled by the Sandbox option: PortableTerminal.FreezerForeverFrozen
+-- NOTE: This feature is disabled on MP clients (isClient() && !isServer()).
 --
 -- APPROACH (mirrors mod 2870368509 ice gem):
 --   Every ~30s: scan for warehouse terminals → find connected freezers →
@@ -85,7 +86,14 @@ end
 -- Feature enabled check
 -- ============================================================================
 
+local function isSP()
+    -- In PZ: SP = client+server in same process; MP client = isClient() only
+    return isClient() and isServer()
+end
+
 local function isEnabled()
+    -- SP ONLY: do not run on dedicated MP clients
+    if not isSP() then return false end
     if SandboxVars and SandboxVars.PortableTerminal and SandboxVars.PortableTerminal.FreezerForeverFrozen == true then
         return true
     end
@@ -305,4 +313,8 @@ local function onTick()
     end
 end
 
-Events.OnTick.Add(onTick)
+-- Only register the tick handler in single-player.
+-- On MP clients, the freezer logic does not run at all.
+if isSP() then
+    Events.OnTick.Add(onTick)
+end

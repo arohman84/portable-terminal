@@ -1,5 +1,23 @@
 VERSION = 1,
 
+option PortableTerminal.BatteryMax
+{
+	type = integer, default = 100, min = 10, max = 999,
+	page = PortableTerminal, translation = BatteryMax,
+}
+
+option PortableTerminal.BatteryDrainPerItem
+{
+	type = double, default = 2.0, min = 0.1, max = 100.0,
+	page = PortableTerminal, translation = BatteryDrainPerItem,
+}
+
+option PortableTerminal.RechargeTime
+{
+	type = integer, default = 6000, min = 100, max = 30000,
+	page = PortableTerminal, translation = RechargeTime,
+}
+
 option PortableTerminal.FreezerForeverFrozen
 {
 	type = boolean, default = false,
