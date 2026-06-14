@@ -1,0 +1,7 @@
+VERSION = 1,
+
+option PortableTerminal.FreezerForeverFrozen
+{
+	type = boolean, default = false,
+	page = PortableTerminal, translation = FreezerForeverFrozen,
+}

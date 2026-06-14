@@ -1,0 +1,5 @@
+name=Portable Terminal
+poster=poster.png
+id=PortableTerminal
+require=WarehouseTerminal_Balanced
+description=A portable device that remotely connects to an existing Warehouse Terminal network via Packer IP. Requires the Warehouse Terminal mod. Lets you browse and transfer items from anywhere within range of a Warehouse Packer.
