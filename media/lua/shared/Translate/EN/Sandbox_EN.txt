@@ -1,0 +1,15 @@
+Sandbox_EN = {
+    Sandbox_PortableTerminal = "Portable Terminal",
+
+    Sandbox_BatteryMax = "Battery Capacity",
+    Sandbox_BatteryMax_tooltip = "Maximum battery charge of the Portable Terminal (as a percentage). Default: 100.",
+
+    Sandbox_BatteryDrainPerItem = "Battery Drain per Item",
+    Sandbox_BatteryDrainPerItem_tooltip = "Battery percentage drained per item transferred (take or store). Default: 2.0.",
+
+    Sandbox_RechargeTime = "Recharge Duration",
+    Sandbox_RechargeTime_tooltip = "How long it takes to fully recharge the Portable Terminal at a generator. 6000 is roughly 1 in-game hour at normal speed. Default: 6000.",
+
+    Sandbox_FreezerForeverFrozen = "Freezer Forever Frozen",
+    Sandbox_FreezerForeverFrozen_tooltip = "When enabled, all freezers connected to a Warehouse Terminal network will keep food frozen forever as long as the freezer has power. Items removed from the freezer will thaw normally.",
+}

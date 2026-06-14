@@ -1,0 +1,12 @@
+module Base
+{
+    item PortableTerminal
+    {
+        DisplayName = Portable Terminal,
+        Icon = PortableTerminal,
+        Type = Normal,
+        Weight = 2.0,
+        WorldStaticModel = Radio,
+        AttachmentType = Walkie,
+    }
+}

@@ -1,0 +1,16 @@
+module Base
+{
+    recipe Craft Portable Terminal
+    {
+        ElectronicsScrap=6,
+        Radio.ElectricWire=3,
+        Aluminum=2,
+        Screws=4,
+        keep Screwdriver,
+
+        Result:PortableTerminal,
+        Time:300.0,
+        Category:Electrical,
+        SkillRequired:Electricity=2,
+    }
+}
