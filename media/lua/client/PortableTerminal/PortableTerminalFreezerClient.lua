@@ -21,9 +21,12 @@
 --   the viewed container), offAge never advances.  No huge thresholds
 --   needed — the steady setOffAge() reset is what stops rot, exactly
 --   like the ice gem does every tick in mod 2870368509.
+--
+-- PERFORMANCE: Uses PortableTerminalScanner for the expensive terminal scan.
 
 require "WarehouseTerminal/WarehouseTerminalVariant"
 require "WarehouseTerminal/WarehouseTerminalUI"
+require "PortableTerminal/PortableTerminalScanner"
 
 PortableTerminalFreezer = PortableTerminalFreezer or {}
 PortableTerminalFreezer.SCAN_INTERVAL_TICKS = 1800       -- ~30 sec
@@ -83,7 +86,7 @@ local function forEachItem(container, fn)
 end
 
 -- ============================================================================
--- Feature enabled check
+-- Feature enabled check (exposed for PortableTerminalScanner.isActive())
 -- ============================================================================
 
 local function isSP()
@@ -91,7 +94,7 @@ local function isSP()
     return isClient() and isServer()
 end
 
-local function isEnabled()
+function PortableTerminalFreezer.isEnabled()
     -- SP ONLY: do not run on dedicated MP clients
     if not isSP() then return false end
     if SandboxVars and SandboxVars.PortableTerminal and SandboxVars.PortableTerminal.FreezerForeverFrozen == true then
@@ -162,70 +165,17 @@ local function oscillateItem(item)
 end
 
 -- ============================================================================
--- Find warehouse terminals — same scan pattern the WarehouseTerminal mod
--- uses in findWarehouseTerminalsForPacker().  Scans 80 tiles around player.
--- ============================================================================
-
-local TERMINAL_SCAN_RADIUS = 80
-
-local function isTerminal(obj)
-    if not obj then return false end
-    local ok, v = pcall(function()
-        return obj:getModData().WarehouseTerminal == true
-    end)
-    return ok and v
-end
-
-local function findTerminals()
-    local terminals, seen = {}, {}
-    local player = getPlayer()
-    if not player then return terminals end
-    local origin = player:getSquare()
-    if not origin then return terminals end
-    local cell = getCell()
-    if not cell then return terminals end
-
-    local cx, cy = origin:getX(), origin:getY()
-    for x = cx - TERMINAL_SCAN_RADIUS, cx + TERMINAL_SCAN_RADIUS do
-        for y = cy - TERMINAL_SCAN_RADIUS, cy + TERMINAL_SCAN_RADIUS do
-            if (x - cx) * (x - cx) + (y - cy) * (y - cy) <= TERMINAL_SCAN_RADIUS * TERMINAL_SCAN_RADIUS then
-                for z = 0, 7 do
-                    local sq = cell:getGridSquare(x, y, z)
-                    if sq then
-                        for _, listName in ipairs({ "getObjects", "getSpecialObjects" }) do
-                            local okL, list = pcall(function() return sq[listName](sq) end)
-                            if okL and list then
-                                for i = 0, list:size() - 1 do
-                                    local obj = list:get(i)
-                                    if obj and not seen[obj] then
-                                        seen[obj] = true
-                                        if isTerminal(obj) then
-                                            table.insert(terminals, obj)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return terminals
-end
-
--- ============================================================================
--- doScan: use WarehouseTerminal.scanContainers() (the PROVEN scan) to find
--- connected freezers.  This function already filters by power and cold type.
+-- doScan: use PortableTerminalScanner for terminal discovery.
+-- Then use WarehouseTerminal.scanContainers() to find connected freezers.
 -- ============================================================================
 
 local function doScan()
-    if not isEnabled() then
+    if not PortableTerminalFreezer.isEnabled() then
         PortableTerminalFreezer.knownFreezers = {}
         return
     end
 
-    local terminals = findTerminals()
+    local terminals = PortableTerminalScanner.scan()
     if #terminals == 0 then
         PortableTerminalFreezer.knownFreezers = {}
         return
@@ -279,7 +229,7 @@ end
 -- ============================================================================
 
 local function doOscillation()
-    if not isEnabled() then return end
+    if not PortableTerminalFreezer.isEnabled() then return end
     for _, info in ipairs(PortableTerminalFreezer.knownFreezers or {}) do
         -- Quick power re-check (power could have gone out since last scan)
         local powered = info.container and pcall(function()

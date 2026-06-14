@@ -5,68 +5,19 @@
 --
 -- Data is published to PortableTerminalPower.generators table.
 -- The PortableTerminalUI reads this to show a "Power" status line.
+--
+-- PERFORMANCE: Uses PortableTerminalScanner for the expensive terminal scan.
+-- Only runs scans when a PortableTerminal is actively in use.
 
 require "WarehouseTerminal/WarehouseTerminalVariant"
+require "PortableTerminal/PortableTerminalScanner"
 
 PortableTerminalPower = PortableTerminalPower or {}
-PortableTerminalPower.SCAN_INTERVAL_MS = 15000          -- ~15 sec
-PortableTerminalPower.TERMINAL_SCAN_RADIUS = 80          -- tiles around player
 PortableTerminalPower.GENERATOR_SCAN_RADIUS = 30         -- tiles around each terminal
 PortableTerminalPower.generators = {}                    -- { {fuel, condition, running, distance, x, y}, ... }
 PortableTerminalPower.lastScan = 0
 
 print("[PortableTerminal] PowerMonitor loaded")
-
--- ============================================================================
--- Helpers
--- ============================================================================
-
-local function isTerminal(obj)
-    if not obj then return false end
-    local ok, v = pcall(function()
-        return obj:getModData().WarehouseTerminal == true
-    end)
-    return ok and v
-end
-
-local function findTerminals()
-    local terminals, seen = {}, {}
-    local player = getPlayer()
-    if not player then return terminals end
-    local origin = player:getSquare()
-    if not origin then return terminals end
-    local cell = getCell()
-    if not cell then return terminals end
-
-    local cx, cy = origin:getX(), origin:getY()
-    local r = PortableTerminalPower.TERMINAL_SCAN_RADIUS
-    for x = cx - r, cx + r do
-        for y = cy - r, cy + r do
-            if (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r then
-                for z = 0, 7 do
-                    local sq = cell:getGridSquare(x, y, z)
-                    if sq then
-                        for _, listName in ipairs({ "getObjects", "getSpecialObjects" }) do
-                            local okL, list = pcall(function() return sq[listName](sq) end)
-                            if okL and list then
-                                for i = 0, list:size() - 1 do
-                                    local obj = list:get(i)
-                                    if obj and not seen[obj] then
-                                        seen[obj] = true
-                                        if isTerminal(obj) then
-                                            table.insert(terminals, obj)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return terminals
-end
 
 -- ============================================================================
 -- Scan for generators around each terminal
@@ -126,33 +77,35 @@ local function findGeneratorsNearTerminals(terminals)
 end
 
 -- ============================================================================
--- doScan: find terminals, find generators near them, publish results
+-- doScan: use shared scanner, find generators near terminals, publish results
 -- ============================================================================
 
 local function doScan()
-    local terminals = findTerminals()
+    -- Gate: only scan when a Portable Terminal is actively in use
+    if not PortableTerminalScanner.isActive() then
+        PortableTerminalPower.generators = {}
+        return
+    end
+
+    local terminals = PortableTerminalScanner.scan()
     if #terminals == 0 then
-        if #(PortableTerminalPower.generators or {}) > 0 then
-            -- DEBUG: uncomment to see when generators clear
-            -- print("[PowerMonitor] No terminals found, clearing " .. #PortableTerminalPower.generators .. " generators")
-        end
         PortableTerminalPower.generators = {}
         return
     end
 
     local genList = findGeneratorsNearTerminals(terminals)
-    print("[PowerMonitor] " .. #terminals .. " terminals, " .. #genList .. " generators found")
+    -- print("[PowerMonitor] " .. #terminals .. " terminals, " .. #genList .. " generators found")
     PortableTerminalPower.generators = genList
     PortableTerminalPower.lastScan = getTimestampMs and getTimestampMs() or 0
 end
 
 -- ============================================================================
--- onTick
+-- onTick — lightweight: only calls doScan when cache likely expired (15s)
 -- ============================================================================
 
 local function onTick()
     local now = getTimestampMs and getTimestampMs() or 0
-    if now - PortableTerminalPower.lastScan >= PortableTerminalPower.SCAN_INTERVAL_MS then
+    if now - PortableTerminalPower.lastScan >= 15000 then
         doScan()
     end
 end

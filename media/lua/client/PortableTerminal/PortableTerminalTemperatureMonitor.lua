@@ -9,70 +9,21 @@
 --   .warnings[]   = { label, message, severity }  -- "danger" | "warning"
 --
 -- Works in both SP and MP. Temperature data is read-only (no item manipulation).
+--
+-- PERFORMANCE: Uses PortableTerminalScanner for the expensive terminal scan.
+-- Only runs scans when a PortableTerminal is actively in use.
 
 require "WarehouseTerminal/WarehouseTerminalVariant"
 require "WarehouseTerminal/WarehouseTerminalUI"
+require "PortableTerminal/PortableTerminalScanner"
 
 PortableTerminalTemperature = PortableTerminalTemperature or {}
-PortableTerminalTemperature.SCAN_INTERVAL_MS = 20000         -- ~20 sec
-PortableTerminalTemperature.TERMINAL_SCAN_RADIUS = 80
 PortableTerminalTemperature.DEFAULT_RADIUS = 12
 PortableTerminalTemperature.containers = {}
 PortableTerminalTemperature.warnings = {}
 PortableTerminalTemperature.lastScan = 0
 
 print("[PortableTerminal] TemperatureMonitor loaded")
-
--- ============================================================================
--- Helpers
--- ============================================================================
-
-local function isTerminal(obj)
-    if not obj then return false end
-    local ok, v = pcall(function()
-        return obj:getModData().WarehouseTerminal == true
-    end)
-    return ok and v
-end
-
-local function findTerminals()
-    local terminals, seen = {}, {}
-    local player = getPlayer()
-    if not player then return terminals end
-    local origin = player:getSquare()
-    if not origin then return terminals end
-    local cell = getCell()
-    if not cell then return terminals end
-
-    local cx, cy = origin:getX(), origin:getY()
-    local r = PortableTerminalTemperature.TERMINAL_SCAN_RADIUS
-    for x = cx - r, cx + r do
-        for y = cy - r, cy + r do
-            if (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r then
-                for z = 0, 7 do
-                    local sq = cell:getGridSquare(x, y, z)
-                    if sq then
-                        for _, listName in ipairs({ "getObjects", "getSpecialObjects" }) do
-                            local okL, list = pcall(function() return sq[listName](sq) end)
-                            if okL and list then
-                                for i = 0, list:size() - 1 do
-                                    local obj = list:get(i)
-                                    if obj and not seen[obj] then
-                                        seen[obj] = true
-                                        if isTerminal(obj) then
-                                            table.insert(terminals, obj)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return terminals
-end
 
 -- ============================================================================
 -- Determine temperature status from coldType and power
@@ -99,16 +50,19 @@ local function getTempStatus(coldType, container)
 end
 
 -- ============================================================================
--- doScan
+-- doScan — uses shared scanner, gated on isActive()
 -- ============================================================================
 
 local function doScan()
-    local terminals = findTerminals()
+    -- Gate: only scan when a Portable Terminal is actively in use
+    if not PortableTerminalScanner.isActive() then
+        PortableTerminalTemperature.containers = {}
+        PortableTerminalTemperature.warnings = {}
+        return
+    end
+
+    local terminals = PortableTerminalScanner.scan()
     if #terminals == 0 then
-        if #(PortableTerminalTemperature.containers or {}) > 0 then
-            -- DEBUG: uncomment to see when containers clear
-            -- print("[TempMonitor] No terminals, clearing " .. #PortableTerminalTemperature.containers .. " containers")
-        end
         PortableTerminalTemperature.containers = {}
         PortableTerminalTemperature.warnings = {}
         return
@@ -167,17 +121,17 @@ local function doScan()
 
     PortableTerminalTemperature.containers = containers
     PortableTerminalTemperature.warnings = warnings
-    print("[TempMonitor] " .. #terminals .. " terminals, " .. #containers .. " containers, " .. #warnings .. " warnings")
+    -- print("[TempMonitor] " .. #terminals .. " terminals, " .. #containers .. " containers, " .. #warnings .. " warnings")
     PortableTerminalTemperature.lastScan = getTimestampMs and getTimestampMs() or 0
 end
 
 -- ============================================================================
--- onTick
+-- onTick — lightweight: only calls doScan when cache likely expired (~20s)
 -- ============================================================================
 
 local function onTick()
     local now = getTimestampMs and getTimestampMs() or 0
-    if now - PortableTerminalTemperature.lastScan >= PortableTerminalTemperature.SCAN_INTERVAL_MS then
+    if now - PortableTerminalTemperature.lastScan >= 20000 then
         doScan()
     end
 end
