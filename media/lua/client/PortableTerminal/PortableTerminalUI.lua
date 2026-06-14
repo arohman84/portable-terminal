@@ -465,16 +465,30 @@ function PortableTerminalWindow:createChildren()
     self.pinBtn = self:addStyledButton(rightX + 112, topY, rightBtnW - 112, buttonHeight, "PIN", "config",
         function() self:showDevicePINDialog() end)
 
-    self.takeOneBtn  = self:addStyledButton(rightX, tabY + 96,  rightBtnW, buttonHeight, "Take 1",               "take",
+    -- ── Right panel action buttons (bottom-anchored) ──
+    local btnH = 30
+    local btnGap = 8
+    local bottomPad = 14
+    local totalBtnH = 5 * btnH + 4 * btnGap
+    local btnStartY = self.height - bottomPad - totalBtnH
+
+    self.takeOneBtn  = self:addStyledButton(rightX, btnStartY, rightBtnW, btnH, "Take 1",               "take",
         function() self:takeItems("one") end)
-    self.takeHalfBtn = self:addStyledButton(rightX, tabY + 128, rightBtnW, buttonHeight, "Take half",            "take",
+    self.takeHalfBtn = self:addStyledButton(rightX, btnStartY + (btnH + btnGap), rightBtnW, btnH, "Take half",            "take",
         function() self:takeItems("half") end)
-    self.takeAllBtn  = self:addStyledButton(rightX, tabY + 160, rightBtnW, buttonHeight, "Take all",             "take",
+    self.takeAllBtn  = self:addStyledButton(rightX, btnStartY + (btnH + btnGap) * 2, rightBtnW, btnH, "Take all",             "take",
         function() self:takeItems("all") end)
-    self.storeSelectedBtn = self:addStyledButton(rightX, tabY + 192, rightBtnW, buttonHeight, "Store selected type", "store",
+    self.storeSelectedBtn = self:addStyledButton(rightX, btnStartY + (btnH + btnGap) * 3, rightBtnW, btnH, "Store selected type", "store",
         function() self:storeSelectedToNetwork() end)
-    self.storeAllBtn = self:addStyledButton(rightX, tabY + 224, rightBtnW, buttonHeight, "Store all inventory",  "store",
+    self.storeAllBtn = self:addStyledButton(rightX, btnStartY + (btnH + btnGap) * 4, rightBtnW, btnH, "Store all inventory",  "store",
         function() self:storeAllToNetwork() end)
+
+    -- Anchor action buttons to bottom
+    self.takeOneBtn.anchorBottom = true
+    self.takeHalfBtn.anchorBottom = true
+    self.takeAllBtn.anchorBottom = true
+    self.storeSelectedBtn.anchorBottom = true
+    self.storeAllBtn.anchorBottom = true
 
     self:updateSearchTabs()
     self:updateConnectionUI()
@@ -790,20 +804,21 @@ function PortableTerminalWindow:prerender()
     -- Selected item info
     if self.selectedEntry then
         self:drawText(self.selectedEntry.displayName, rightX, infoY, colors.accent.r, colors.accent.g, colors.accent.b, 1, UIFont.Small)
-        infoY = infoY + 14
+        infoY = infoY + 16
         self:drawText("x" .. tostring(self.selectedEntry.count), rightX, infoY, colors.cold.r, colors.cold.g, colors.cold.b, 1, UIFont.Small)
+        infoY = infoY + 4
     else
         self:drawText("No item selected", rightX, infoY, colors.textDim.r, colors.textDim.g, colors.textDim.b, 1, UIFont.Small)
+        infoY = infoY + 2
     end
-    infoY = infoY + 2
 
     -- ── Power section: generator fuel + condition ──
+    infoY = infoY + 8
     local generators = PortableTerminalPower and PortableTerminalPower.generators or {}
-    infoY = infoY + 4
     self:drawRect(rightX, infoY, rpw, 1, 0.35, colors.border.r, colors.border.g, colors.border.b)
-    infoY = infoY + 4
+    infoY = infoY + 6
     self:drawText("⚡ Power", rightX, infoY, colors.amber.r, colors.amber.g, colors.amber.b, 1, UIFont.Small)
-    infoY = infoY + 14
+    infoY = infoY + 16
 
     if #generators > 0 then
         for _, gen in ipairs(generators) do
@@ -843,12 +858,12 @@ function PortableTerminalWindow:prerender()
     end
 
     -- ── Temperature warnings ──
+    infoY = infoY + 6
     local tempWarnings = PortableTerminalTemperature and PortableTerminalTemperature.warnings or {}
-    infoY = infoY + 2
     self:drawRect(rightX, infoY, rpw, 1, 0.35, colors.border.r, colors.border.g, colors.border.b)
-    infoY = infoY + 4
+    infoY = infoY + 6
     self:drawText("🌡 Temperature", rightX, infoY, colors.cold.r, colors.cold.g, colors.cold.b, 1, UIFont.Small)
-    infoY = infoY + 14
+    infoY = infoY + 16
 
     if #tempWarnings > 0 then
         local maxWarns = 4
