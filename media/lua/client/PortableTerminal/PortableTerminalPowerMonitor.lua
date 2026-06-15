@@ -15,7 +15,6 @@ require "PortableTerminal/PortableTerminalScanner"
 PortableTerminalPower = PortableTerminalPower or {}
 PortableTerminalPower.GENERATOR_SCAN_RADIUS = 30         -- tiles around each terminal
 PortableTerminalPower.generators = {}                    -- { {fuel, condition, running, distance, x, y}, ... }
-PortableTerminalPower.lastScan = 0
 
 print("[PortableTerminal] PowerMonitor loaded")
 
@@ -81,12 +80,6 @@ end
 -- ============================================================================
 
 local function doScan()
-    -- Gate: only scan when a Portable Terminal is actively in use
-    if not PortableTerminalScanner.isActive() then
-        PortableTerminalPower.generators = {}
-        return
-    end
-
     local terminals = PortableTerminalScanner.scan()
     if #terminals == 0 then
         PortableTerminalPower.generators = {}
@@ -94,20 +87,18 @@ local function doScan()
     end
 
     local genList = findGeneratorsNearTerminals(terminals)
-    -- print("[PowerMonitor] " .. #terminals .. " terminals, " .. #genList .. " generators found")
     PortableTerminalPower.generators = genList
-    PortableTerminalPower.lastScan = getTimestampMs and getTimestampMs() or 0
 end
 
 -- ============================================================================
--- onTick — lightweight: only calls doScan when cache likely expired (15s)
+-- start / stop — called by PortableTerminalUI when window opens/closes.
+-- Does ONE snapshot scan; no periodic polling.
 -- ============================================================================
 
-local function onTick()
-    local now = getTimestampMs and getTimestampMs() or 0
-    if now - PortableTerminalPower.lastScan >= 15000 then
-        doScan()
-    end
+function PortableTerminalPower.start()
+    doScan()
 end
 
-Events.OnTick.Add(onTick)
+function PortableTerminalPower.stop()
+    PortableTerminalPower.generators = {}
+end

@@ -316,6 +316,15 @@ function PortableTerminal.createWindow(playerObj, item)
         PortableTerminalWindow.instance:removeFromUIManager()
     end
     PortableTerminalWindow.instance = window
+
+    -- Start background monitors only when the terminal is actually open
+    if PortableTerminalPower and PortableTerminalPower.start then
+        PortableTerminalPower.start()
+    end
+    if PortableTerminalTemperature and PortableTerminalTemperature.start then
+        PortableTerminalTemperature.start()
+    end
+
     return window
 end
 
@@ -1037,6 +1046,29 @@ function PortableTerminalWindow:closeDueToDeadBattery()
     self:setVisible(false)
     self:removeFromUIManager()
     PortableTerminalWindow.instance = nil
+
+    -- Stop background monitors when terminal closes
+    if PortableTerminalPower and PortableTerminalPower.stop then
+        PortableTerminalPower.stop()
+    end
+    if PortableTerminalTemperature and PortableTerminalTemperature.stop then
+        PortableTerminalTemperature.stop()
+    end
+end
+
+-- ============================================================================
+-- close override — called when user clicks X or presses Escape.
+-- ============================================================================
+function PortableTerminalWindow:close()
+    -- Stop background monitors
+    if PortableTerminalPower and PortableTerminalPower.stop then
+        PortableTerminalPower.stop()
+    end
+    if PortableTerminalTemperature and PortableTerminalTemperature.stop then
+        PortableTerminalTemperature.stop()
+    end
+    PortableTerminalWindow.instance = nil
+    ISCollapsableWindow.close(self)
 end
 
 -- ============================================================================

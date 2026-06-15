@@ -21,7 +21,6 @@ PortableTerminalTemperature = PortableTerminalTemperature or {}
 PortableTerminalTemperature.DEFAULT_RADIUS = 12
 PortableTerminalTemperature.containers = {}
 PortableTerminalTemperature.warnings = {}
-PortableTerminalTemperature.lastScan = 0
 
 print("[PortableTerminal] TemperatureMonitor loaded")
 
@@ -50,17 +49,10 @@ local function getTempStatus(coldType, container)
 end
 
 -- ============================================================================
--- doScan — uses shared scanner, gated on isActive()
+-- doScan — uses shared scanner
 -- ============================================================================
 
 local function doScan()
-    -- Gate: only scan when a Portable Terminal is actively in use
-    if not PortableTerminalScanner.isActive() then
-        PortableTerminalTemperature.containers = {}
-        PortableTerminalTemperature.warnings = {}
-        return
-    end
-
     local terminals = PortableTerminalScanner.scan()
     if #terminals == 0 then
         PortableTerminalTemperature.containers = {}
@@ -121,19 +113,18 @@ local function doScan()
 
     PortableTerminalTemperature.containers = containers
     PortableTerminalTemperature.warnings = warnings
-    -- print("[TempMonitor] " .. #terminals .. " terminals, " .. #containers .. " containers, " .. #warnings .. " warnings")
-    PortableTerminalTemperature.lastScan = getTimestampMs and getTimestampMs() or 0
 end
 
 -- ============================================================================
--- onTick — lightweight: only calls doScan when cache likely expired (~20s)
+-- start / stop — called by PortableTerminalUI when window opens/closes.
+-- Does ONE snapshot scan; no periodic polling.
 -- ============================================================================
 
-local function onTick()
-    local now = getTimestampMs and getTimestampMs() or 0
-    if now - PortableTerminalTemperature.lastScan >= 20000 then
-        doScan()
-    end
+function PortableTerminalTemperature.start()
+    doScan()
 end
 
-Events.OnTick.Add(onTick)
+function PortableTerminalTemperature.stop()
+    PortableTerminalTemperature.containers = {}
+    PortableTerminalTemperature.warnings = {}
+end

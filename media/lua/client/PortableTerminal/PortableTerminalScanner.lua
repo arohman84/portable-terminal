@@ -100,19 +100,3 @@ function PortableTerminalScanner.scan(force)
     PortableTerminalScanner.lastScan = now
     return terminals
 end
-
--- ============================================================================
--- isActive — returns true if any subsystem actually needs scan results
--- ============================================================================
-
-function PortableTerminalScanner.isActive()
-    -- Always return true for power/temp monitors when a PortableTerminal window is open
-    if PortableTerminalWindow and PortableTerminalWindow.instance and PortableTerminalWindow.instance:isVisible() then
-        return true
-    end
-    -- Freezer feature check
-    if PortableTerminalFreezer and PortableTerminalFreezer.isEnabled and PortableTerminalFreezer.isEnabled() then
-        return true
-    end
-    return false
-end
